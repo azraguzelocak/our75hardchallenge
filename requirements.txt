@@ -1,0 +1,22 @@
+# Telegram bot (async, v20+) with JobQueue support for scheduled reminders
+python-telegram-bot[job-queue]==21.6
+
+# Anthropic API (AI brain + vision)
+anthropic==0.39.0
+
+# Supabase client (Postgres + Storage)
+supabase==2.9.1
+
+# Direct Postgres access for the dashboard
+psycopg2-binary==2.9.10
+
+# Dashboard
+streamlit==1.39.0
+pandas==2.2.3
+plotly==5.24.1
+
+# Config + secrets
+python-dotenv==1.0.1
+
+# Weather (Open-Meteo) and other HTTP calls
+httpx==0.27.2

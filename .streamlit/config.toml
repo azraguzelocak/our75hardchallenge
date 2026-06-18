@@ -1,0 +1,11 @@
+# Dark + red 75 Hard look (see examples/ screenshots).
+[theme]
+base = "dark"
+primaryColor = "#E50914"
+backgroundColor = "#0B0B0D"
+secondaryBackgroundColor = "#16161A"
+textColor = "#F5F5F5"
+font = "sans serif"
+
+[server]
+headless = true
