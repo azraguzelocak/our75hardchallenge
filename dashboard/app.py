@@ -141,7 +141,6 @@ else:
 
 rows_by_name = {r["name"]: r for r in user_rows}
 names = list(rows_by_name)
-pin_by_slug = {u.slug: u.dashboard_pin for u in USERS.values()}
 
 # Water goal (ml) — single source of truth is the bot's water task definition.
 WATER_GOAL_ML = next(
@@ -491,20 +490,10 @@ def page_compare() -> None:
 # ===========================================================================
 def page_photos(row: dict) -> None:
     st.markdown(f"#### {row['name']}")
-    st.caption("Private — unlock with your PIN.")
-    expected = pin_by_slug.get(row["slug"])
-
-    entered = st.text_input(f"PIN for {row['name']}", type="password", key=f"pin_{row['slug']}")
-    if not entered:
-        st.info("Enter the PIN to view these photos.")
-        return
-    if expected and entered != str(expected):
-        st.error("Wrong PIN.")
-        return
 
     photos = [p for p in data.progress_photos(row["id"]) if p["url"]]
     if not photos:
-        st.info("No progress photos with images yet. (Storage may not be configured.)")
+        st.info("No progress photos yet. Send a progress photo to the bot.")
         return
 
     if len(photos) >= 2:

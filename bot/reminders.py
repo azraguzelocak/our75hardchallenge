@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
@@ -48,6 +49,65 @@ def _checklist_lines(state: ChecklistState) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Message variations — a different phrasing fires each time (random pick).
+# Placeholders are filled with .format(...).
+# ---------------------------------------------------------------------------
+_MORNING_OPENERS = [
+    "🔥 Up, {name}. {day}",
+    "🔥 No snooze, {name}. {day}",
+    "🔥 Move, {name}. {day}",
+    "🔥 Let's go, {name}. {day}",
+    "🔥 Eyes open, {name}. {day}",
+]
+_DAY_LINES = [
+    "Day {n} of 75. No days off.",
+    "Day {n} of 75. Earn it.",
+    "Day {n} of 75. Nobody's coming to do this for you.",
+    "Day {n} of 75. Prove it again.",
+]
+_WATER_LINES = [
+    "💧 {name}: {current}/{target} ml — behind. {left} to go. Drink, no stalling.",
+    "💧 {left} ml short, {name}. {current}/{target}. Pick up the bottle — now.",
+    "💧 Water's not optional, {name}. {current}/{target} ml, {left} to go.",
+    "💧 {name}, {current}/{target} ml. Stop slacking and hydrate — {left} left.",
+    "💧 Hydrate, {name}. {current}/{target} ml — {left} more. Go.",
+]
+_WORKOUT_LINES = [
+    "🏋️ {name}: {total}/2 workouts ({note}). Finish it — no excuses.",
+    "🏋️ {total}/2, {name}. {note}. Get moving — clock's running.",
+    "🏋️ Second workout, {name}? {total}/2 done, {note}. No couch.",
+    "🏋️ {name}, not done: {total}/2 ({note}). Lace up.",
+]
+_EVENING_OPENERS = [
+    "🌆 {name}, day's not done — don't coast.",
+    "🌆 Don't slack now, {name}. Close it out.",
+    "🌆 {name}, finish strong. The day's not over.",
+    "🌆 No coasting, {name}. Lock in the rest.",
+]
+_EVENING_PHOTO = [
+    "📸 Progress photo now — {other} will see it.",
+    "📸 Snap the progress photo. {other}'s watching.",
+    "📸 Photo time, no skipping — {other} sees it.",
+]
+_EVENING_WEIGH = [
+    "⚖️ Weigh in: /weight.",
+    "⚖️ On the scale: /weight.",
+    "⚖️ Log your weight: /weight. Face it.",
+]
+_FINAL_OPENERS = [
+    "⏰ {name}, still not done:",
+    "⏰ Clock's almost out, {name}. Outstanding:",
+    "⏰ {name}, midnight's close and these are open:",
+]
+_FINAL_PUNCH = [
+    "Miss these = back to DAY 1. Move. 🔥",
+    "Leave these and the streak dies. Move. 🔥",
+    "These aren't suggestions. Skip them, restart at day 1. Go. 🔥",
+    "Don't throw the whole thing away now. Finish them. 🔥",
+]
+
+
+# ---------------------------------------------------------------------------
 # Reminder builders — each returns the message text, or None to stay quiet
 # ---------------------------------------------------------------------------
 async def _morning(user: UserConfig, state: ChecklistState) -> str:
@@ -61,15 +121,15 @@ async def _morning(user: UserConfig, state: ChecklistState) -> str:
     ]
     plan = await asyncio.to_thread(ai.suggest_workout, name=user.name, recent=recent_desc)
     day_line = (
-        "Warm-up day — challenge hasn't started yet, but let's get the habits in. 😏"
-        if state.day_number == 0
-        else f"Day {state.day_number} of 75 — no days off, remember?"
+        "Warm-up day. Move." if state.day_number == 0
+        else random.choice(_DAY_LINES).format(n=state.day_number)
     )
+    opener = random.choice(_MORNING_OPENERS).format(name=user.name, day=day_line)
     return (
-        f"☀️ Rise and grind, {user.name}. {day_line}\n\n"
-        f"Today's checklist:\n{_checklist_lines(state)}\n\n"
+        f"{opener}\n\n"
+        f"{_checklist_lines(state)}\n\n"
         f"🌤 {forecast}\n\n"
-        f"🏋️ Today's plan:\n{plan}"
+        f"🏋️ Today:\n{plan}"
     )
 
 
@@ -79,9 +139,9 @@ async def _water(user: UserConfig, state: ChecklistState) -> str | None:
         return None
     current = int(ts.value or 0)
     target = int(ts.task.target or 0)
-    return (f"💧 {user.name}, that water isn't going to drink itself. "
-            f"You're at {current}/{target} ml — still {target - current} to go. "
-            f"Chop chop. 💅")
+    return random.choice(_WATER_LINES).format(
+        name=user.name, current=current, target=target, left=target - current
+    )
 
 
 async def _late_afternoon(user: UserConfig, state: ChecklistState) -> str | None:
@@ -91,19 +151,19 @@ async def _late_afternoon(user: UserConfig, state: ChecklistState) -> str | None
     total, outdoor = await asyncio.to_thread(
         db.get_workout_counts, state.user_row["id"], db.app_today()
     )
-    outdoor_note = ("and ONE of them better be outdoors 🌳" if outdoor < 1
-                    else "(outdoor done, look at you ✨)")
-    return (f"🏋️ Second workout, {user.name}? You're sitting on {total}/2 "
-            f"{outdoor_note}. The couch will survive without you — move it.")
+    note = "one still outdoors" if outdoor < 1 else "outdoor done"
+    return random.choice(_WORKOUT_LINES).format(
+        name=user.name, total=total, note=note
+    )
 
 
 async def _evening(user: UserConfig, state: ChecklistState) -> str:
     photo = _task_state(state, "progress_photo")
-    lines = [f"🌆 Evening, {user.name}. Don't get cozy yet."]
+    lines = [random.choice(_EVENING_OPENERS).format(name=user.name)]
     if photo and not photo.complete:
         other = the_other_user(user.slug)
-        lines.append(f"📸 Progress photo — yes, today's. {other.name}'s watching. 👀")
-    lines.append("⚖️ And step on the scale: /weight. Numbers don't lie.")
+        lines.append(random.choice(_EVENING_PHOTO).format(other=other.name))
+    lines.append(random.choice(_EVENING_WEIGH))
     return "\n".join(lines)
 
 
@@ -137,9 +197,9 @@ async def _final(user: UserConfig, state: ChecklistState) -> str | None:
     if not pending:
         return None
     bullet = "\n".join(f"• {p}" for p in pending)
-    return (f"⏰ Tick tock, {user.name}. It's nearly midnight and you STILL "
-            f"haven't done:\n{bullet}\n\nFancy starting over at day 1? Didn't "
-            f"think so. Get it done. 💅🔥")
+    opener = random.choice(_FINAL_OPENERS).format(name=user.name)
+    punch = random.choice(_FINAL_PUNCH)
+    return f"{opener}\n{bullet}\n\n{punch}"
 
 
 # Maps reminder key -> builder coroutine.

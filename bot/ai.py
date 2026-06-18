@@ -155,16 +155,15 @@ def suggest_workout(*, name: str, recent: list[str]) -> str:
         f"strength. Give exactly one indoor session and one outdoor session, each "
         f"about 45 minutes. Rotate muscle groups so we don't hit the same group two "
         f"days running. Here are the recent sessions:\n{recent_text}\n\n"
-        f"Keep it short and scannable. Use sentence case. Use this shape:\n"
-        f"Indoor: <focus> — <3-4 bullet exercises>\n"
-        f"Outdoor: <focus> — <what to do>\n"
-        f"End with one short line. Tone: a little sassy and cheeky — like a "
-        f"no-nonsense gym buddy who gives tough love but genuinely wants {name} "
-        f"to win. Confident, playful, never mean."
+        f"Keep it SHORT. Two lines only:\n"
+        f"Indoor: <focus> — 3 exercises, comma-separated\n"
+        f"Outdoor: <focus> — one line\n"
+        f"Then one short hard-hitting line. Tone: blunt, demanding, motivating — "
+        f"a drill-sergeant coach, zero excuses. No fluff, no cute emoji."
     )
     response = _client().messages.create(
         model=_model(),
-        max_tokens=700,
+        max_tokens=300,
         messages=[{"role": "user", "content": prompt}],
     )
     return _text_of(response)
@@ -189,15 +188,13 @@ def daily_summary(*, name: str, day_number: int, tasks_done: int, tasks_total: i
         f"- calories eaten today: {calories} ({target_line})\n"
         f"- workouts logged: {workouts}\n"
         f"- still pending: {pending_line}\n\n"
-        f"Two to four short lines. Tone: sassy, cheeky, tough-love — like a "
-        f"no-nonsense friend who hypes {name} up but won't let them slack. If the "
-        f"day's complete, brag on their behalf; if tasks are pending, call it out "
-        f"with playful attitude (never cruel). End with one line on tomorrow's focus. "
-        f"Sentence case, one or two emoji max."
+        f"Max two short lines. Tone: blunt, hard, motivating — a drill-sergeant "
+        f"coach. Day done = hard-earned respect; tasks pending = call out the slack "
+        f"and demand better (never attack their worth). No fluff, minimal emoji."
     )
     response = _client().messages.create(
         model=_model(),
-        max_tokens=400,
+        max_tokens=200,
         messages=[{"role": "user", "content": prompt}],
     )
     return _text_of(response)
