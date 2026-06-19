@@ -4,11 +4,8 @@ python-telegram-bot[job-queue]==21.6
 # Anthropic API (AI brain + vision)
 anthropic==0.39.0
 
-# Supabase client (Postgres + Storage)
+# Supabase client (Postgres + Storage) — used by both bot and dashboard
 supabase==2.9.1
-
-# Direct Postgres access for the dashboard
-psycopg2-binary==2.9.10
 
 # Dashboard
 streamlit==1.39.0
