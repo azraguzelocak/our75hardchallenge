@@ -92,8 +92,15 @@ Python 3.11+ recommended.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1      # Windows PowerShell
+# Dashboard only:
 pip install -r requirements.txt
+# Bot + dashboard (full local setup):
+pip install -r requirements-bot.txt
 ```
+
+> Streamlit Cloud installs `requirements.txt` (dashboard deps only — no Telegram
+> library, to keep the cloud build lean and conflict-free). The Telegram bot
+> extras live in `requirements-bot.txt`.
 
 ### 2. Telegram bot token (from BotFather)
 

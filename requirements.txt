@@ -1,23 +1,22 @@
-# Telegram bot (async, v20+) with JobQueue support for scheduled reminders
-python-telegram-bot[job-queue]==21.6
+# Dashboard dependencies — this is the file Streamlit Cloud installs.
+# Bot-only extras (Telegram, weather) live in requirements-bot.txt.
+# Local full setup (bot + dashboard):  pip install -r requirements-bot.txt
 
-# Anthropic API (AI brain + vision)
-anthropic==0.39.0
-
-# Supabase client (Postgres + Storage) — used by both bot and dashboard
-supabase==2.9.1
-
-# Dashboard
-streamlit==1.39.0
+# streamlit-float 0.4.0 requires streamlit>=1.45, so don't pin below that.
+streamlit>=1.45
 streamlit-float==0.4.0
 pandas==2.2.3
 plotly==5.24.1
 
-# Config + secrets
-python-dotenv==1.0.1
+# Supabase client (used by dashboard + bot). Pulls a compatible httpx itself —
+# we deliberately don't pin httpx here to avoid a resolver conflict.
+supabase==2.9.1
 
-# Password hashing for the dashboard login
+# AI brain (coach chat + vision). Reused by the dashboard's coach.
+anthropic==0.39.0
+
+# Dashboard login password hashing
 bcrypt==4.2.1
 
-# Weather (Open-Meteo) and other HTTP calls
-httpx==0.27.2
+# Config + secrets
+python-dotenv==1.0.1

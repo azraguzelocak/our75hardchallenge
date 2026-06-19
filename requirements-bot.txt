@@ -1,0 +1,9 @@
+# Full local setup (bot + dashboard):  pip install -r requirements-bot.txt
+# This includes the dashboard deps plus the bot-only extras below.
+-r requirements.txt
+
+# Telegram bot (async, v20+) with JobQueue for scheduled reminders
+python-telegram-bot[job-queue]==21.6
+
+# Weather (Open-Meteo) for the bot's morning outdoor-workout suggestion
+httpx==0.27.2
