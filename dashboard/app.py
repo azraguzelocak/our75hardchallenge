@@ -11,9 +11,12 @@ Run with:  streamlit run dashboard/app.py
 from __future__ import annotations
 
 import html
+import logging
 import os
 import sys
 from pathlib import Path
+
+log = logging.getLogger("dashboard")
 
 # Make `shared` / `dashboard` importable however the app is launched
 # (locally, or on Streamlit Cloud where the working dir differs).
@@ -653,8 +656,12 @@ def render_coach_widget() -> None:
                                 reply = st.write_stream(ai.coach_agent_stream(
                                     system, api_messages, tools.TOOL_SCHEMAS, execute,
                                     max_tokens=COACH_MAX_TOKENS))
-                            except Exception:  # noqa: BLE001 - never leak internals
-                                reply = "Sorry — I hit a problem. Try again."
+                            except Exception as exc:  # noqa: BLE001 - never leak secrets
+                                log.exception("Coach error")
+                                # Show the error type + short message (no secrets) so
+                                # problems are diagnosable. e.g. RuntimeError: Missing
+                                # ANTHROPIC_API_KEY, or AuthenticationError.
+                                reply = f"⚠️ Coach error — {type(exc).__name__}: {exc}"
                                 st.markdown(reply)
                         msgs.append({"role": "assistant", "content": reply})
                         # The coach may have logged something — clear the cached
