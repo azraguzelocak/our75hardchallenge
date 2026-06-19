@@ -14,9 +14,9 @@ import logging
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
-from bot import ai
+from bot import ai, tools
 from bot.auth import restricted
-from shared import db, storage
+from shared import coach, db, storage
 from shared.config import UserConfig, the_other_user
 
 log = logging.getLogger("bot.ai_handlers")
@@ -344,6 +344,41 @@ async def target(update: Update, context: ContextTypes.DEFAULT_TYPE, user: UserC
     )
     extra = f", protein {protein} g" if protein else ""
     await update.message.reply_text(f"Targets saved: {calories} kcal/day{extra}. ✅")
+
+
+# ---------------------------------------------------------------------------
+# Coach chat in Telegram — plain text messages talk to the data-aware coach
+# ---------------------------------------------------------------------------
+@restricted
+async def coach_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, user: UserConfig) -> None:
+    """Any free-text message → the per-user coach (same brain as the dashboard)."""
+    text = (update.message.text or "").strip()
+    if not text:
+        return
+    uid = await asyncio.to_thread(db.get_user_id, user.slug)
+    history = await asyncio.to_thread(db.get_coach_messages, uid, 12)
+    history.append({"role": "user", "content": text})
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+
+    def _run() -> str:
+        system = coach.system_prompt(user.slug)
+        execute = lambda n, i: tools.run_tool(user.slug, n, i)  # noqa: E731 - scoped to user
+        return "".join(ai.coach_agent_stream(
+            system, history, tools.TOOL_SCHEMAS, execute, max_tokens=800))
+
+    try:
+        reply = await asyncio.to_thread(_run)
+    except Exception:  # noqa: BLE001 - never leak internals to chat
+        log.exception("Coach chat failed")
+        reply = "Sorry — I hit a problem. Try again."
+
+    await update.message.reply_text(reply)
+    try:
+        await asyncio.to_thread(db.add_coach_message, uid, "user", text)
+        await asyncio.to_thread(db.add_coach_message, uid, "assistant", reply)
+    except Exception:  # noqa: BLE001
+        log.warning("Could not persist coach messages (run migration 0003?).")
 
 
 # ---------------------------------------------------------------------------

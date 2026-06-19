@@ -60,6 +60,8 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("summary", ai_handlers.summary))
     app.add_handler(CommandHandler("target", ai_handlers.target))
     app.add_handler(MessageHandler(filters.PHOTO, ai_handlers.on_photo))
+    # Any other plain text → chat with the data-aware coach.
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ai_handlers.coach_chat))
 
     # Phase 5 — reminders
     app.add_handler(CommandHandler("preview", reminders.preview))

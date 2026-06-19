@@ -49,8 +49,9 @@ if any(p.exists() for p in _secret_files):
         pass
 
 from bot import ai, tools  # noqa: E402  reuse the bot's Anthropic module + coach tools
-from dashboard import coach, data, theme  # noqa: E402
+from dashboard import data, theme  # noqa: E402
 from shared import auth  # noqa: E402  bcrypt login
+from shared import coach  # noqa: E402  coach context/prompt (shared with the bot)
 from shared import db as wdb  # noqa: E402  write helpers (always the real DB)
 from shared.config import USERS  # noqa: E402
 
@@ -618,6 +619,36 @@ def _coach_slug_for_widget() -> str | None:
     return None
 
 
+COACH_CHIPS = ["How's my week?", "What should I eat?",
+               "Plan today's workout", "Am I behind?"]
+
+
+def _coach_send(slug: str, uid: str, msgs: list, prompt: str) -> None:
+    """Handle one coach turn: run the agent, persist both sides, refresh."""
+    msgs.append({"role": "user", "content": prompt})
+    with st.chat_message("assistant"):
+        try:
+            system = coach.system_prompt(slug)
+            api_messages = [{"role": m["role"], "content": m["content"]} for m in msgs]
+            execute = lambda n, i: tools.run_tool(slug, n, i)  # noqa: E731 - scoped to slug
+            reply = st.write_stream(ai.coach_agent_stream(
+                system, api_messages, tools.TOOL_SCHEMAS, execute,
+                max_tokens=COACH_MAX_TOKENS))
+        except Exception as exc:  # noqa: BLE001 - never leak secrets
+            log.exception("Coach error")
+            reply = f"⚠️ Coach error — {type(exc).__name__}: {exc}"
+            st.markdown(reply)
+    msgs.append({"role": "assistant", "content": reply})
+    # Persist to the DB so the chat survives a refresh (no-op if table missing).
+    try:
+        wdb.add_coach_message(uid, "user", prompt)
+        wdb.add_coach_message(uid, "assistant", reply)
+    except Exception:  # noqa: BLE001
+        log.warning("Could not persist coach messages (run migration 0003?).")
+    st.cache_data.clear()  # the coach may have logged something → refresh tabs
+    st.rerun()
+
+
 def render_coach_widget() -> None:
     """A floating coach chat pinned to the bottom-right, shown on every view."""
     float_init()
@@ -632,8 +663,16 @@ def render_coach_widget() -> None:
                 st.caption("Log in to chat with your coach.")
             else:
                 st.markdown(f"**Coach** · {USERS[slug].name}")
+                uid = wdb.get_user_id(slug)
                 key = f"coach_msgs_{slug}"
-                msgs = st.session_state.setdefault(key, [])
+                # Load saved history once per session.
+                if key not in st.session_state:
+                    st.session_state[key] = wdb.get_coach_messages(uid, 20)
+                msgs = st.session_state[key]
+
+                if not msgs:
+                    with st.chat_message("assistant"):
+                        st.markdown(coach.opening_line(slug))  # proactive status
                 for m in msgs[-20:]:
                     with st.chat_message(m["role"]):
                         st.markdown(m["content"])
@@ -641,33 +680,19 @@ def render_coach_widget() -> None:
                 if len(msgs) >= COACH_MAX_MESSAGES:
                     st.caption("Chat limit reached for this session — refresh to reset.")
                 else:
+                    # Suggested-question chips (handy when the chat is short).
+                    if len(msgs) <= 1:
+                        cc = st.columns(2)
+                        for i, chip in enumerate(COACH_CHIPS):
+                            if cc[i % 2].button(chip, key=f"chip_{slug}_{i}",
+                                                use_container_width=True):
+                                _coach_send(slug, uid, msgs, chip)
                     with st.form(f"coach_form_{slug}", clear_on_submit=True):
                         text = st.text_input("Message", label_visibility="collapsed",
                                              placeholder="Ask your coach…")
                         sent = st.form_submit_button("Send", use_container_width=True)
                     if sent and text.strip():
-                        msgs.append({"role": "user", "content": text.strip()})
-                        with st.chat_message("assistant"):
-                            try:
-                                system = coach.system_prompt(slug)
-                                api_messages = [{"role": m["role"], "content": m["content"]}
-                                                for m in msgs]
-                                execute = lambda n, i: tools.run_tool(slug, n, i)  # noqa: E731
-                                reply = st.write_stream(ai.coach_agent_stream(
-                                    system, api_messages, tools.TOOL_SCHEMAS, execute,
-                                    max_tokens=COACH_MAX_TOKENS))
-                            except Exception as exc:  # noqa: BLE001 - never leak secrets
-                                log.exception("Coach error")
-                                # Show the error type + short message (no secrets) so
-                                # problems are diagnosable. e.g. RuntimeError: Missing
-                                # ANTHROPIC_API_KEY, or AuthenticationError.
-                                reply = f"⚠️ Coach error — {type(exc).__name__}: {exc}"
-                                st.markdown(reply)
-                        msgs.append({"role": "assistant", "content": reply})
-                        # The coach may have logged something — clear the cached
-                        # reads so every tab reflects it without a manual refresh.
-                        st.cache_data.clear()
-                        st.rerun()
+                        _coach_send(slug, uid, msgs, text.strip())
         panel.float(
             "bottom: 5.5rem; right: 1.5rem; width: 23rem; max-height: 68vh; "
             "overflow-y: auto; background-color: #16161A; border: 1px solid #2a2a31; "

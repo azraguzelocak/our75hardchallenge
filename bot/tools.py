@@ -92,6 +92,22 @@ TOOL_SCHEMAS = [
         "description": "Get a snapshot of the user's day (tasks, nutrition, workouts, weight).",
         "input_schema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "get_trends",
+        "description": "Get this week vs last week (workouts, avg calories, pages/day, weight).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "remember",
+        "description": ("Save a lasting preference or fact about the user (dietary "
+                        "needs, injuries, foods they like, their goal) so future "
+                        "advice is personalized."),
+        "input_schema": {
+            "type": "object",
+            "properties": {"note": {"type": "string"}},
+            "required": ["note"],
+        },
+    },
 ]
 
 
@@ -121,8 +137,19 @@ def run_tool(slug: str, name: str, args: dict) -> str:
         return f"Day {row['current_day']} of 75, current streak {row['current_streak']}."
 
     if name == "get_summary":
-        from dashboard import coach
+        from shared import coach
         return coach.build_context(slug)
+
+    if name == "get_trends":
+        from shared import coach
+        return coach.week_summary(uid)
+
+    if name == "remember":
+        note = str(args.get("note", "")).strip()
+        if not note:
+            return "Tell me what you'd like me to remember."
+        db.append_coach_note(uid, note[:500])
+        return f"Got it — I'll remember that: {note}"
 
     if name == "add_weight":
         weight = _num(args["weight"], 20, 400, "weight")

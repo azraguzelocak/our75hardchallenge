@@ -704,6 +704,85 @@ def add_book(user_id: str, title: str, total_pages: int | None = None) -> dict:
     return result.data[0]
 
 
+def get_books(user_id: str) -> list[dict]:
+    result = (
+        get_client().table("books").select("*").eq("user_id", user_id)
+        .order("created_at").execute()
+    )
+    return result.data
+
+
+def get_weights(user_id: str) -> list[dict]:
+    result = (
+        get_client().table("weights").select("date, weight").eq("user_id", user_id)
+        .order("date").execute()
+    )
+    return result.data
+
+
+def get_reading_rows(user_id: str, days: int = 14) -> list[dict]:
+    since = app_today() - dt.timedelta(days=days)
+    result = (
+        get_client().table("reading_logs").select("date, pages_read")
+        .eq("user_id", user_id).gte("date", _iso(since)).execute()
+    )
+    return result.data
+
+
+def get_meal_rows(user_id: str, days: int = 14) -> list[dict]:
+    since = app_today() - dt.timedelta(days=days)
+    result = (
+        get_client().table("meals").select("date, ai_calories")
+        .eq("user_id", user_id).gte("date", _iso(since)).execute()
+    )
+    return result.data
+
+
+# ---------------------------------------------------------------------------
+# Coach memory — preferences + persistent chat history (migration 0003)
+# ---------------------------------------------------------------------------
+def get_coach_profile(user_id: str) -> str:
+    """The user's freeform coach preferences/notes (or '')."""
+    try:
+        result = (
+            get_client().table("coach_profile").select("notes")
+            .eq("user_id", user_id).limit(1).execute()
+        )
+        return result.data[0]["notes"] if result.data else ""
+    except Exception:  # noqa: BLE001 - table may not exist yet
+        return ""
+
+
+def append_coach_note(user_id: str, note: str) -> None:
+    """Append a remembered preference line to the user's coach profile."""
+    existing = get_coach_profile(user_id)
+    note = note.strip()
+    combined = (existing + "\n- " + note).strip() if existing else "- " + note
+    get_client().table("coach_profile").upsert(
+        {"user_id": user_id, "notes": combined, "updated_at": "now()"},
+        on_conflict="user_id",
+    ).execute()
+
+
+def add_coach_message(user_id: str, role: str, content: str) -> None:
+    get_client().table("coach_messages").insert(
+        {"user_id": user_id, "role": role, "content": content[:8000]}
+    ).execute()
+
+
+def get_coach_messages(user_id: str, limit: int = 20) -> list[dict]:
+    """Most recent chat messages, oldest-first, as [{role, content}]."""
+    try:
+        result = (
+            get_client().table("coach_messages").select("role, content")
+            .eq("user_id", user_id).order("created_at", desc=True)
+            .limit(limit).execute()
+        )
+    except Exception:  # noqa: BLE001 - table may not exist yet
+        return []
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(result.data)]
+
+
 def set_book_finished(book_id: str, finished: bool = True) -> None:
     """Mark a book finished (and snap current_page to total when finishing)."""
     updates: dict = {"is_finished": finished}
@@ -774,6 +853,14 @@ __all__ = [
     "latest_weight",
     "add_reading_log",
     "add_book",
+    "get_books",
+    "get_weights",
+    "get_reading_rows",
+    "get_meal_rows",
+    "get_coach_profile",
+    "append_coach_note",
+    "add_coach_message",
+    "get_coach_messages",
     "set_book_finished",
     "reset_challenge",
 ]
