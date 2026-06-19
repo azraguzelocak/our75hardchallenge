@@ -23,6 +23,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit_float import float_init
 
 # Must be the FIRST Streamlit command.
 st.set_page_config(page_title="75 Hard tracker", page_icon="♠", layout="wide",
@@ -44,7 +45,9 @@ if any(p.exists() for p in _secret_files):
     except Exception:  # noqa: BLE001
         pass
 
-from dashboard import data, theme  # noqa: E402
+from bot import ai, tools  # noqa: E402  reuse the bot's Anthropic module + coach tools
+from dashboard import coach, data, theme  # noqa: E402
+from shared import auth  # noqa: E402  bcrypt login
 from shared import db as wdb  # noqa: E402  write helpers (always the real DB)
 from shared.config import USERS  # noqa: E402
 
@@ -52,23 +55,15 @@ theme.inject()
 
 
 # ---------------------------------------------------------------------------
-# Login landing page — per-user username + password.
-# Configure AZRA_PASSWORD / BERRIN_PASSWORD in Streamlit secrets (or .env).
-# If neither is set, the app is open (handy for local use).
+# Login landing page — per-user username + bcrypt-hashed password.
+# Configure AZRA_PASSWORD_HASH / BERRIN_PASSWORD_HASH (salted bcrypt hashes) in
+# .env or Streamlit secrets — generate with: python -m scripts.set_password.
+# If neither hash is set, the app is open (handy for local first-run).
 # Usernames are the slugs: "azra" and "berrin".
 # ---------------------------------------------------------------------------
-def _credentials() -> dict[str, str]:
-    creds = {
-        "azra": os.getenv("AZRA_PASSWORD"),
-        "berrin": os.getenv("BERRIN_PASSWORD"),
-    }
-    return {u: p for u, p in creds.items() if p}
-
-
 def _login_gate() -> None:
-    creds = _credentials()
-    if not creds or st.session_state.get("user"):
-        return  # no auth configured, or already logged in
+    if not auth.configured_users() or st.session_state.get("user"):
+        return  # no passwords configured, or already logged in
 
     left, mid, right = st.columns([1, 1.4, 1])
     with mid:
@@ -79,9 +74,9 @@ def _login_gate() -> None:
             password = st.text_input("Password", type="password")
             ok = st.form_submit_button("Log in", use_container_width=True)
         if ok:
-            u = username.strip().lower()
-            if u in creds and password == creds[u]:
-                st.session_state["user"] = u
+            slug = auth.authenticate(username, password)
+            if slug:
+                st.session_state["user"] = slug
                 st.rerun()
             st.error("Wrong username or password.")
     st.stop()
@@ -563,6 +558,125 @@ def _report_markdown(row: dict, ov: dict, total_workouts: int, books_finished: i
 
 
 # ===========================================================================
+# Settings — including the confirm-gated danger zone (destructive actions)
+# ===========================================================================
+def page_settings() -> None:
+    st.markdown("#### Settings")
+    slug = st.session_state.get("user")
+    if not slug:
+        if auth.configured_users():
+            st.info("Log in to manage your account.")
+            return
+        picked = st.selectbox("Account", names, key="settings_actor")  # open local mode
+        slug = rows_by_name[picked]["slug"]
+
+    name = USERS[slug].name
+    st.caption(f"Account: {name}")
+
+    # Destructive actions live here behind an explicit confirmation — never the
+    # chatbot. Each is scoped to the logged-in user.
+    with st.expander("⚠️ Danger zone"):
+        st.warning(
+            f"Resetting puts {name} back to **day 1** and clears the current "
+            "streak. This can't be undone. (Your longest-streak record is kept.)"
+        )
+        confirm = st.checkbox(
+            f"Yes, reset {name}'s challenge to day 1", key=f"reset_confirm_{slug}"
+        )
+        if st.button("Reset challenge", type="primary", disabled=not confirm,
+                     key=f"reset_btn_{slug}"):
+            wdb.reset_challenge(slug)
+            st.cache_data.clear()
+            st.success("Done — back to day 1, streak cleared.")
+            st.rerun()
+
+
+# ===========================================================================
+# Coach chat — floating widget in the bottom-right corner
+# ===========================================================================
+COACH_MAX_MESSAGES = 40  # per-session cap (cost / abuse guard)
+COACH_MAX_TOKENS = 800   # per-reply cap
+
+
+def _coach_slug_for_widget() -> str | None:
+    """The user the coach acts for — always the logged-in user (hard-scoped).
+
+    The model never picks whose data to touch. Only in open local mode (no
+    passwords set) does a human choose, via a selectbox inside the panel.
+    """
+    slug = st.session_state.get("user")
+    if slug:
+        return slug
+    if not auth.configured_users():  # open local dev mode
+        if len(user_rows) == 1:
+            return user_rows[0]["slug"]
+        picked = st.selectbox("You are", names, key="coach_actor")
+        return rows_by_name[picked]["slug"]
+    return None
+
+
+def render_coach_widget() -> None:
+    """A floating coach chat pinned to the bottom-right, shown on every view."""
+    float_init()
+    is_open = st.session_state.get("coach_open", False)
+
+    if is_open:
+        panel = st.container()
+        with panel:
+            slug = _coach_slug_for_widget()
+            if not slug:
+                st.markdown("**Coach**")
+                st.caption("Log in to chat with your coach.")
+            else:
+                st.markdown(f"**Coach** · {USERS[slug].name}")
+                key = f"coach_msgs_{slug}"
+                msgs = st.session_state.setdefault(key, [])
+                for m in msgs[-20:]:
+                    with st.chat_message(m["role"]):
+                        st.markdown(m["content"])
+
+                if len(msgs) >= COACH_MAX_MESSAGES:
+                    st.caption("Chat limit reached for this session — refresh to reset.")
+                else:
+                    with st.form(f"coach_form_{slug}", clear_on_submit=True):
+                        text = st.text_input("Message", label_visibility="collapsed",
+                                             placeholder="Ask your coach…")
+                        sent = st.form_submit_button("Send", use_container_width=True)
+                    if sent and text.strip():
+                        msgs.append({"role": "user", "content": text.strip()})
+                        with st.chat_message("assistant"):
+                            try:
+                                system = coach.system_prompt(slug)
+                                api_messages = [{"role": m["role"], "content": m["content"]}
+                                                for m in msgs]
+                                execute = lambda n, i: tools.run_tool(slug, n, i)  # noqa: E731
+                                reply = st.write_stream(ai.coach_agent_stream(
+                                    system, api_messages, tools.TOOL_SCHEMAS, execute,
+                                    max_tokens=COACH_MAX_TOKENS))
+                            except Exception:  # noqa: BLE001 - never leak internals
+                                reply = "Sorry — I hit a problem. Try again."
+                                st.markdown(reply)
+                        msgs.append({"role": "assistant", "content": reply})
+                        # The coach may have logged something — clear the cached
+                        # reads so every tab reflects it without a manual refresh.
+                        st.cache_data.clear()
+                        st.rerun()
+        panel.float(
+            "bottom: 5.5rem; right: 1.5rem; width: 23rem; max-height: 68vh; "
+            "overflow-y: auto; background-color: #16161A; border: 1px solid #2a2a31; "
+            "border-radius: 16px; padding: 1rem; box-shadow: 0 10px 40px rgba(0,0,0,.55);"
+        )
+
+    toggle = st.container()
+    with toggle:
+        if st.button("✕ Close" if is_open else "💬 Coach", key="coach_toggle",
+                     use_container_width=True):
+            st.session_state["coach_open"] = not is_open
+            st.rerun()
+    toggle.float("bottom: 1.5rem; right: 1.5rem; width: 10rem;")
+
+
+# ===========================================================================
 # Tabs (navigation is now top tabs, not a sidebar)
 # ===========================================================================
 TABS = [
@@ -575,8 +689,12 @@ TABS = [
     ("Compare", lambda: page_compare()),
     ("Photos", lambda: _both(page_photos)),
     ("Day 75 report", lambda: _both(page_report)),
+    ("Settings", lambda: page_settings()),
 ]
 
 for tab, (_, render) in zip(st.tabs([label for label, _ in TABS]), TABS):
     with tab:
         render()
+
+# Floating coach chat (bottom-right), available on every view.
+render_coach_widget()

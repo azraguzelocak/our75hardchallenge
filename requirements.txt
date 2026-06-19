@@ -12,11 +12,15 @@ psycopg2-binary==2.9.10
 
 # Dashboard
 streamlit==1.39.0
+streamlit-float==0.4.0
 pandas==2.2.3
 plotly==5.24.1
 
 # Config + secrets
 python-dotenv==1.0.1
+
+# Password hashing for the dashboard login
+bcrypt==4.2.1
 
 # Weather (Open-Meteo) and other HTTP calls
 httpx==0.27.2

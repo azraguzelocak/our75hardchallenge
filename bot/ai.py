@@ -34,6 +34,59 @@ def _model() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Coach chat (dashboard) — streaming, reuses the same client + model
+# ---------------------------------------------------------------------------
+def coach_stream(system: str, messages: list[dict], max_tokens: int = 800):
+    """Yield text chunks from Claude for the dashboard coach chat.
+
+    `messages` is the chat history as [{role, content}, ...]. Use with
+    Streamlit's st.write_stream. max_tokens is capped by the caller to bound
+    cost. Tools are handled separately (see bot.tools)."""
+    client = _client()
+    with client.messages.stream(
+        model=_model(), max_tokens=max_tokens, system=system, messages=messages
+    ) as stream:
+        yield from stream.text_stream
+
+
+def coach_agent_stream(system: str, messages: list[dict], tools: list[dict],
+                       execute, max_tokens: int = 800, max_steps: int = 6):
+    """Streaming agentic loop for the coach: stream text, run tools, repeat.
+
+    `execute(name, input) -> str` runs a tool (already scoped to the user by the
+    caller). `messages` is mutated locally with the tool round-trip — pass a copy.
+    Yields text deltas plus a short note per tool call, for st.write_stream.
+    """
+    client = _client()
+    for _ in range(max_steps):
+        with client.messages.stream(
+            model=_model(), max_tokens=max_tokens, system=system,
+            tools=tools, messages=messages,
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+            final = stream.get_final_message()
+
+        messages.append({"role": "assistant", "content": final.content})
+        if final.stop_reason != "tool_use":
+            return
+
+        results = []
+        for block in final.content:
+            if block.type == "tool_use":
+                try:
+                    outcome = execute(block.name, dict(block.input))
+                except Exception as exc:  # noqa: BLE001 - report, don't crash chat
+                    outcome = f"Error: {exc}"
+                yield f"\n\n🛠 _{outcome}_\n\n"
+                results.append({"type": "tool_result", "tool_use_id": block.id,
+                                "content": str(outcome)})
+        messages.append({"role": "user", "content": results})
+
+    yield "\n\n_(stopped after several steps)_"
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _text_of(response) -> str:

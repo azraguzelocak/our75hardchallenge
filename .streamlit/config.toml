@@ -9,3 +9,11 @@ font = "sans serif"
 
 [server]
 headless = true
+# Bind to localhost only — never 0.0.0.0 / public. Reach it remotely over
+# Tailscale (see README), not by exposing this port to the LAN or internet.
+address = "localhost"
+# Streamlit Cloud ignores server.address, so this is safe there too.
+
+[browser]
+# Don't phone home usage stats — keep it private.
+gatherUsageStats = false

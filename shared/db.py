@@ -660,6 +660,19 @@ def add_weight(user_id: str, day: dt.date, *, weight: float | None = None,
     return result.data[0]
 
 
+def add_reading_log(user_id: str, day: dt.date, pages: int,
+                    book_id: str | None = None) -> dict:
+    """Record pages read on a given day."""
+    result = (
+        get_client()
+        .table("reading_logs")
+        .insert({"user_id": user_id, "date": _iso(day), "pages_read": pages,
+                 "book_id": book_id})
+        .execute()
+    )
+    return result.data[0]
+
+
 def latest_weight(user_id: str) -> dict | None:
     """The most recent weight entry (for the leaderboard / comparison)."""
     result = (
@@ -704,6 +717,17 @@ def set_book_finished(book_id: str, finished: bool = True) -> None:
 # ---------------------------------------------------------------------------
 # User settings — nutrition targets (set by the users themselves)
 # ---------------------------------------------------------------------------
+def reset_challenge(slug: str) -> None:
+    """Destructive: reset a user's day counter and current streak to the start.
+
+    Scoped to one slug. The longest-streak record is preserved. This is only
+    ever called from an explicit, confirmed UI action — never from the chatbot.
+    """
+    get_client().table("users").update(
+        {"current_day": 1, "current_streak": 0}
+    ).eq("slug", slug).execute()
+
+
 def set_targets(slug: str, *, calorie_target: int | None = None,
                 protein_target: int | None = None) -> None:
     updates: dict = {}
@@ -745,6 +769,8 @@ __all__ = [
     "complete_task",
     "add_weight",
     "latest_weight",
+    "add_reading_log",
     "add_book",
     "set_book_finished",
+    "reset_challenge",
 ]

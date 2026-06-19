@@ -131,13 +131,27 @@ Copy-Item .env.example .env
 python -m scripts.seed
 ```
 
+### 7. Dashboard login passwords
+
+The dashboard requires a login. Set each person's password as a **salted bcrypt
+hash** (never plaintext):
+
+```powershell
+python -m scripts.set_password azra
+python -m scripts.set_password berrin
+```
+
+Each prints a line like `AZRA_PASSWORD_HASH='$2b$12$...'` — paste it into `.env`
+(local) and/or your Streamlit secrets (hosted). If no hash is set, the dashboard
+runs open (handy on a first local run).
+
 ## Running
 
 ```powershell
-# Bot (phase 1: prints a scaffold check; real handlers in phase 2)
+# Bot — Telegram handlers + scheduled reminders
 python -m bot.main
 
-# Dashboard
+# Dashboard — binds to localhost only (see config). Log in with azra/berrin.
 streamlit run dashboard/app.py
 ```
 
@@ -150,21 +164,62 @@ streamlit run dashboard/app.py
   editable directly in the `users` table. All optional; you can just log from
   day 1.
 
-## Privacy and security
+## Coach chatbot (in the dashboard)
 
-- The bot rejects any Telegram id not on the allow-list.
-- All secrets live in `.env` (gitignored). `.env.example` holds placeholders.
-- Photos are stored as private objects; tables keep only the object path, never
-  bytes or public URLs.
-- The dashboard's before/after slider shows each user only their own photos by
-  default, gated by a per-user PIN (phase 6).
+A floating **💬 Coach** widget (bottom-right, on every view) talks to a 75 Hard
+coach that knows your real numbers and can log for you:
 
-## Hosting (covered fully in phase 7)
+- **Data-aware:** before each reply it pulls the logged-in user's data (day,
+  streak, today's tasks, calories/protein vs target, workouts this week, weight,
+  current book) so answers are about *your* numbers.
+- **Can log by chatting:** tools for `log_task`, `add_weight`, `log_meal`,
+  `log_workout`, `log_reading`, `get_streak`, `get_summary` — reusing the same DB
+  functions the Telegram bot uses. It asks a clarifying question when a request
+  is ambiguous, and validates inputs before writing.
+- **Model:** `claude-sonnet-4-6`, streamed replies.
 
-The bot is a long-running process; a small always-on host such as
-[Railway](https://railway.app/), [Fly.io](https://fly.io/) or a cheap VPS works
-well. The dashboard can run on [Streamlit Community Cloud](https://streamlit.io/cloud)
-pointed at the same Supabase database. Deploy steps come in phase 7.
+## Security model
+
+- **Login:** the whole dashboard is gated by a username + **bcrypt-hashed**
+  password (`shared/auth.py`). Only hashes are stored, in `.env` / secrets —
+  never plaintext, never in the repo.
+- **Per-user scoping:** the coach only ever reads/writes the **logged-in user's**
+  data — the user ID is injected by the app, never chosen by the model.
+- **No destructive actions from chat:** the coach has only additive/read tools.
+  Resetting the day/streak lives in **Settings → Danger zone** behind an explicit
+  confirm checkbox + button.
+- **Photos never sent to the API:** progress photos are display-only; only food
+  photos (which need analysis) go to Anthropic, and they're kept in a separate
+  table from progress photos. The chatbot sends no images at all.
+- **Secrets server-side only:** the Anthropic key + DB credentials stay in
+  `.env` / secrets; the chatbot is instructed never to reveal them.
+- **Cost guard:** capped `max_tokens` per reply, ≤6 tool steps per turn, and a
+  per-session message limit.
+- The Telegram bot also rejects any Telegram id not on the allow-list.
+
+## Running privately over Tailscale
+
+The dashboard binds to **localhost only** (`.streamlit/config.toml`) — it is not
+exposed to the LAN or the public internet. To reach it from your phone, use
+[Tailscale](https://tailscale.com/) (no router ports, encrypted):
+
+```powershell
+# 1. Start the dashboard (localhost-bound)
+streamlit run dashboard/app.py
+
+# 2. Expose it to your tailnet only (TLS, private to your devices):
+tailscale serve --bg 8520
+#   then open the printed https://<machine>.<tailnet>.ts.net URL on your phone
+```
+
+Keep the bot running too (`python -m bot.main`) for logging + reminders. For
+24/7 reminders, run both on an always-on machine.
+
+> **Streamlit Community Cloud note:** if you instead host the dashboard on
+> Streamlit Cloud, it is public by URL — there your privacy comes from the
+> **login** above (set `*_PASSWORD_HASH` in the app's secrets), not from network
+> binding. Don't put the bot token there; the dashboard only needs the Supabase
+> keys + the password hashes.
 
 ## Build order
 
