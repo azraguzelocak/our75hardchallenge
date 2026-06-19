@@ -13,24 +13,27 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import re
 from functools import lru_cache
 
 import anthropic
-
-from shared.config import load_settings
 
 log = logging.getLogger("bot.ai")
 
 
 @lru_cache(maxsize=1)
 def _client() -> anthropic.Anthropic:
-    settings = load_settings()
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    """Anthropic client. Reads only ANTHROPIC_API_KEY so the dashboard coach
+    works with just that secret (no need for the bot's Telegram/DB secrets)."""
+    key = os.getenv("ANTHROPIC_API_KEY")
+    if not key:
+        raise RuntimeError("Missing ANTHROPIC_API_KEY (set it in .env or Streamlit secrets).")
+    return anthropic.Anthropic(api_key=key)
 
 
 def _model() -> str:
-    return load_settings().anthropic_model
+    return os.getenv("ANTHROPIC_MODEL") or "claude-sonnet-4-6"
 
 
 # ---------------------------------------------------------------------------

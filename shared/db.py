@@ -54,8 +54,11 @@ def get_client() -> Client:
 # Time — "today" in the app's configured timezone
 # ---------------------------------------------------------------------------
 def app_today() -> dt.date:
-    """Return today's date in the configured (local) timezone."""
-    tz = ZoneInfo(load_settings().weather_timezone)
+    """Return today's date in the configured (local) timezone.
+
+    Reads WEATHER_TIMEZONE directly (default Europe/Amsterdam) so dashboard
+    paths don't require the bot's secrets via load_settings()."""
+    tz = ZoneInfo(os.getenv("WEATHER_TIMEZONE") or "Europe/Amsterdam")
     return dt.datetime.now(tz).date()
 
 
@@ -129,7 +132,7 @@ def get_user_id(slug: str) -> str | None:
 
 def user_mode(user_row: dict) -> Mode:
     """The challenge mode for this user (falls back to the global default)."""
-    raw = user_row.get("mode") or load_settings().default_mode.value
+    raw = user_row.get("mode") or os.getenv("DEFAULT_MODE") or "strict"
     return Mode(raw)
 
 
