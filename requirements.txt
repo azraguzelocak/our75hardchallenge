@@ -2,8 +2,9 @@
 # Bot-only extras (Telegram, weather) live in requirements-bot.txt.
 # Local full setup (bot + dashboard):  pip install -r requirements-bot.txt
 
-# streamlit-float 0.4.0 requires streamlit>=1.45, so don't pin below that.
-streamlit>=1.45
+# Pinned to 1.45.0: streamlit-float needs >=1.45, and 1.45's server stays up
+# in headless/background runs (1.58's newer server exits without a terminal).
+streamlit==1.45.0
 streamlit-float==0.4.0
 pandas==2.2.3
 plotly==5.24.1
